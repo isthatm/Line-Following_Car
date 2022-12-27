@@ -1,6 +1,10 @@
 #include "mbed.h"
 #include "bbcar.h"
-#include "uLCD_4DGL.h"
+#include "MQTTClient.h"
+#include "MQTTNetwork.h"
+#include "MQTTmbed.h"
+
+WiFiInterface *wifi;
 
 Ticker servo_ticker;
 Ticker servo_feedback_ticker;
@@ -24,39 +28,41 @@ parallax_ping  ping1(pin8);
 BusInOut qti_pin(D4,D5,D6,D7);
 parallax_qti qti1(qti_pin);
 
-//LCD
-uLCD_4DGL uLCD(D1, D0, D2);
+volatile int message_num = 0;
+volatile int arrivedcount = 0;
+volatile bool closed = false;
+
+const char *topic = "Car status"; // TODO "Mbed"
 
 int pattern;
-
-int a = 0; int task = 0; int subTask = 0; int taskConfirm = 0; 
+int a = 0; int task = 0; int subTask = 0; int taskConfirm = 0; int confirmed;
 float d0, d1, inita0, inita1;
-float d;
-
+float d; float s;
 const float PI = 3.13159;
 const float R = 10.2; //distance between wheels -> radius of rotaion
 const float rotP = 64.08849013;
 float obj[2]; float rotAngle[2];
 float w1, w2;
+float w = 0; 
 double objD;
-int distance2Obj;
 
-void distance_travelled(){// task = 1, task = 2, task = 4
+
+void carStatus(){// task = 1, task = 2, task = 4
+            //distance travelled
             d0 = 6.5*PI*(abs(car.servo0.angle-inita0)/360);
             d1 = 6.5*PI*(abs(car.servo1.angle-inita1)/360);
-            d = (d0+d1) / 2 ;
+            s = ( (d0+d1) / 2 ); // speed
             //printf("angle0: %d,  angle1: %d", car.servo0.angle, car.servo1.angle);
             //printf("111 Distance travelled from last task: %f\n", d[task]); 
             //printf("Distance travelled: %f, Task executed: %d", d, task);
             inita0 = car.servo0.angle; //update current wheel angle for next call
             inita1 = car.servo1.angle;
+            d = d + s;    
 }
 
 void obsMeasure2(){
    float p2, theta2, dis2, alpha2, rotAngle2;
    double obsMeasureAngle0;
-   //int pingCheck;
-   //printf("Enter 2nd measurement \n");
 
     while(1) {
         pattern = (int)qti1;
@@ -83,8 +89,7 @@ void obsMeasure2(){
     alpha2 = 90 - theta2;
     rotAngle2 =(90 - alpha2)*PI / 180;
     w2 = abs(sin(rotAngle2)*obj[1]);
-    uLCD.color(WHITE);
-    uLCD.printf("\n Distance between 2 objects: %f \n", w1 + w2);
+    w = w1 + w2;
     //printf("Distance to object 2: %f , w2: %f, wheel_angle: : %d, p2: %f, alpha2: %f, rotAngle2: %f\n", obj[1], w2, abs(car.servo1.angle) + 20, p2, alpha2, rotAngle2);
     //printf("Distance to object 2: %f\n", obj[1]);
     //printf("Rotangle: %f, initial angle: %f, current angle: %d\n", rotAngle[1], obsMeasureAngle0, car.servo1.angle);
@@ -135,7 +140,7 @@ void obsMeasure1(){
     measure_queue.call(&obsMeasure2);   
 }
 
-/*
+
 void messageArrived(MQTT::MessageData& md) {
     MQTT::Message &message = md.message;
     char msg[300];
@@ -151,7 +156,7 @@ void messageArrived(MQTT::MessageData& md) {
 void publish_message(MQTT::Client<MQTTNetwork, Countdown> *client1) {
   MQTT::Message message;
   char buff[100];
-  sprintf(buff,"Distance travelled from last task: %f", d); // client prints the message if confirmed = 1
+  sprintf(buff,"Distance travelled: %f (cm), Speed: %f (cm/s), Task executed: %d,  Object width: %f ", d, s, task, w); // client prints the message if confirmed = 1
   message.qos = MQTT::QOS0;
   message.retained = false;
   message.dup = false;
@@ -166,21 +171,72 @@ void publish_message(MQTT::Client<MQTTNetwork, Countdown> *client1) {
 void close_mqtt() { 
     closed = true; 
 }
-*/
+
 
 int main() {
 
+  wifi = WiFiInterface::get_default_instance();
+  if (!wifi) {
+    printf("ERROR: No WiFiInterface found.\r\n");
+    return -1;
+  }
+
+  printf("\nConnecting to %s...\r\n", MBED_CONF_APP_WIFI_SSID);
+  int ret = wifi->connect(MBED_CONF_APP_WIFI_SSID, MBED_CONF_APP_WIFI_PASSWORD,
+                          NSAPI_SECURITY_WPA_WPA2);
+  if (ret != 0) {
+    printf("\nConnection error: %d\r\n", ret);
+    return -1;
+  }
+
+  NetworkInterface *net = wifi;
+  MQTTNetwork mqttNetwork(net);
+  MQTT::Client<MQTTNetwork, Countdown> client(mqttNetwork);
+
+  // TODO: revise host to your IP
+  const char *host = "192.168.43.84";
+  const int port=1883;
+  printf("Connecting to TCP network...\r\n");
+  printf("address is %s/%d\r\n",host, port); // check setting
+
+  int rc = mqttNetwork.connect(host, port); //(host, 1883);
+  if (rc != 0) {
+    printf("Connection error.");// -3011: open mqtt mosquitto broker
+    return -1;
+  }
+  printf("Successfully connected!\r\n");
+
+  MQTTPacket_connectData data = MQTTPacket_connectData_initializer;
+  data.MQTTVersion = 3;
+  data.clientID.cstring = "Car status"; // TODO Mbed
+
+  if ((rc = client.connect(data)) != 0) {
+    printf("Fail to connect MQTT\r\n");
+  }
+
+  if (client.subscribe(topic, MQTT::QOS0, messageArrived) != 0){
+            printf("Fail to subscribe\r\n");
+  }
+
+   // ******* CAR DRIVING *******
   carThread.start(callback(&car_queue, &EventQueue::dispatch_forever));
   measureThread.start(callback(&measure_queue, &EventQueue::dispatch_forever));
-  //car_queue.call_every(1s, &publish_message, &client);
+  car_queue.call_every(5s, &publish_message, &client);
+  car_queue.call_every(1s, &carStatus);
     
   inita0 = car.servo0.angle;
   inita1 = car.servo1.angle;
 
   car.goStraight(40);
-  while(1) {
+    while(1) {
+
+        if (task == 4){
+            //distance_travelled(task, 1); // CALL HERE
+            break;
+        }
+
        pattern = (int)qti1;
-       printf("pattern: %d\n",pattern);
+       //printf("pattern: %d\n",pattern);
 
        if (task==1 && subTask == 1){
            objD = (float)ping1;
@@ -206,42 +262,52 @@ int main() {
                 }
                 task++; // task = 2
                 //distance_travelled(task, 1);
-                subTask++; // subTask = 2
+                //subTask++; // subTask = 3
                 ThisThread::sleep_for(2s);
                 car_queue.call(&obsMeasure1);     
             }
         }
        if (task != 2) { // if (task != 2) -> stop the car when excuting obstacle detection
         switch (pattern) {
-            case 0b1000: car.turn(30, -0.1); a = 0; break;
-            case 0b1100: car.turn(30, -0.4); a = 0; break;
+            case 0b1000: car.turn(33, -0.1); a = 0; break;
+            case 0b1100: car.turn(33, -0.4); a = 0; break;
             case 0b0100: car.turn(30, -0.7); a = 0; break;
-            case 0b0110: car.goStraight(32); a = 0; break;
+            case 0b0110: car.goStraight(30); a = 0; break;
             case 0b0010: car.turn(30, 0.7); a = 0; break;
-            case 0b0011: car.turn(30, 0.4); a = 0; break;
-            case 0b0001: car.turn(30, 0.1); a = 0; break;
+            case 0b0011: car.turn(33, 0.4); a = 0; break;
+            case 0b0001: car.turn(33, 0.1); a = 0; break;
+            case 0b0111: car.turn(33,0.3); a = 0; break; // special case for unflattened sections
+            case 0b1001: car.turn(33,0.4); a = 0; break;
             case 0b1111: {
                 if (a==0 && task == 3){
                     car.stop();
                     task++; //task = 4 (finished)
                     break;
                 }
-                else if (a==0 && subTask != 1) { // TODO: change a to 0
+                else if (a==0 && task == 0) { // TODO: change a to 0
                     car.stop(); 
-                    a++; task++;// task = 1 (turn left) 
-                    //distance_travelled(task, 1); // CALL HERE (DONE)
+                    a++; task++;// task = 1 
                     ThisThread::sleep_for(1s);
                     break;
                 }
-                else if(a==1 && task == 1){ //TASK 1: turn to the left branch
-                    car.turn(30, 0.1);
+                if(a==1 && task == 1){ //TASK 1: turn to the left branch
+                    car.turn(31, 0.1);
                     ThisThread::sleep_for(1s);
-                    subTask++; //subTask = 1
+                    //subTask++; 
                     break;
                 }
+
+                if (task == 1 && subTask == 0){
+                    car.goStraight(30);
+                    subTask++; // subTask = 1: turn on laserPing
+                    break;
+                }
+                /*
                 else if(a==1 && task == 4){
                     car.stop();
+                    break;
                 }
+                */
             
                 else { // make car go again 
                     car.goStraight(30);
@@ -253,6 +319,27 @@ int main() {
      }
      ThisThread::sleep_for(10ms);
     }
+    // ******* END *******
+
+    while (1) {
+        if (closed) break;
+    client.yield(500);
+    ThisThread::sleep_for(1s);
+    }
+  
+  printf("Ready to close MQTT Network......\n");
+
+  if ((rc = client.unsubscribe(topic)) != 0) {
+    printf("Failed: rc from unsubscribe was %d\n", rc);
+  }
+  if ((rc = client.disconnect()) != 0) {
+    printf("Failed: rc from disconnect was %d\n", rc);
+  }
+
+  mqttNetwork.disconnect();
+  printf("Successfully closed!\n");
+
+  return 0;
 }
 
 
