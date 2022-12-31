@@ -14,6 +14,7 @@ EventQueue car_queue;
 
 Thread measureThread;
 EventQueue measure_queue;
+ MQTT::Client<MQTTNetwork, Countdown> *client();
 
 //Car
 PwmIn servo0_f(D12), servo1_f(D11); // servo0 - left ; servo1 - right
@@ -39,6 +40,7 @@ int a;
 int objectDetection = 1; // there is no object ahead by default
 float inita0 = 0; float inita1 = 0;
 double d,s;
+float dis;
 
 
 const float PI = 3.13159;
@@ -46,7 +48,9 @@ const float PI = 3.13159;
 const float rotP = 32.04424507;
 float obj[2], w[2];
 int i = 0;
-int rotatingSpeed = 40; int carSpeed = 32;
+int rotatingSpeed = 40; int carSpeed = 35;
+
+int flag;
 
 void carStatus(){
             //distance travelled
@@ -71,9 +75,42 @@ void widthCalculation (double d, double currentWheelAngle, double initWheelAngle
     i++;
 }
 
+void messageArrived(MQTT::MessageData& md) {
+    MQTT::Message &message = md.message;
+    char msg[300];
+    sprintf(msg, "Message arrived: QoS%d, retained %d, dup %d, packetID %d\r\n", message.qos, message.retained, message.dup, message.id);
+    //printf(msg);
+    ThisThread::sleep_for(1s);
+    char payload[300];
+    sprintf(payload, "Payload %.*s\r\n", message.payloadlen, (char*)message.payload);
+    //printf(payload);
+    ++arrivedcount;
+}
+
+void publish_message(MQTT::Client<MQTTNetwork, Countdown> *client1) {
+  MQTT::Message message;
+  char buff[100];
+  sprintf(buff,"Distance travelled: %.2f (cm), Speed: %.2f(cm/s), pattern: %d", d, s, pattern);
+  //sprintf(buff,"Distance travelled: %.2f (cm), pattern: %d", d, pattern);
+  message.qos = MQTT::QOS0;
+  message.retained = false;
+  message.dup = false;
+  message.payload = (void *)buff;
+  message.payloadlen = strlen(buff) + 1;
+  int rc = client1->publish(topic, message);
+
+  printf("rc:  %d\r\n", rc);
+  printf("[Pubished]: %s\r\n", buff);
+}
+
+void close_mqtt() { 
+    closed = true; 
+}
+
 void obsMeasure(){
     double d1, d2, obsMeasureAngle0;
     obsMeasureAngle0 = car.servo1.angle;
+   // car_queue.call(&publish_message, &client);
     while(1) {
         d1 = (float)ping1;
         if (d1 > 20){
@@ -86,18 +123,19 @@ void obsMeasure(){
         ThisThread::sleep_for(10ms);
     }
     widthCalculation(d1, car.servo1.angle, obsMeasureAngle0);
+    ThisThread::sleep_for(500ms);
     
     // 2nd object
     while(1) {
         pattern = (int)qti1;
-        if (pattern == 0b0110){
-            car.stop();
-            ThisThread::sleep_for(1s);
-            obsMeasureAngle0 = car.servo1.angle; 
-            break;
+        if (pattern != 0b0110){
+            car.rotate(-rotatingSpeed);
         }
         else {
-            car.rotate(-rotatingSpeed);
+            car.stop();
+            obsMeasureAngle0 = car.servo1.angle; 
+            ThisThread::sleep_for(1s);
+            break;
         }
     }
     while(1){
@@ -116,101 +154,75 @@ void obsMeasure(){
     
     while(1){
        pattern = (int)qti1;
-       if (pattern == 0b0110){
+       if ( pattern == 0b0110){
            car.stop();
            break;
        }
        else{
-           car.rotate(35);
+           car.rotate(rotatingSpeed);
        }
    }
-   if ( w[0] + w[1] > 15){
+   //if ( w[0] + w[1] > 15){
        objectDetection = 1; // the gap length is wide enough, it's safe to go
-    }
+       printf("Finished object detection. \n");
+    //}
 }
 
 void carDriving(){
+    if(objectDetection){
       pattern = (int)qti1;
-      //printf("pattern: %d", pattern);
-      objD = (float)ping1;
-      if (objD < 11.5){ 
-          objectDetection = 0; // car enters cautious mode
-          car.stop();
-          ThisThread::sleep_for(1s);
-          car.rotate(rotatingSpeed);
-          ThisThread::sleep_for(2s);
-          while(1) {
-              pattern = (int)qti1;
-              if (pattern == 0b0110){
-                  car.stop();
-                  ThisThread::sleep_for(1s);
-                  break;
-                }
-              else {
-                  car.rotate(rotatingSpeed);
-                }
-            }
-            measure_queue.call(&obsMeasure);
-      }
-      if (objectDetection){
+          flag = 2;
           switch (pattern) {
             case 0b1000: car.turn(carSpeed, -0.1); a = 0; break;
-            case 0b1100: car.turn(carSpeed, -0.4); a = 0; break;
+            case 0b1100: car.turn(carSpeed, -0.5); a = 0; break;
             case 0b0100: car.turn(carSpeed, -0.7); a = 0; break;
-            case 0b0110: car.goStraight(carSpeed); a = 0; break;
+            case 0b0110: car.goStraight(27); a = 0; break;
             case 0b0010: car.turn(carSpeed, 0.7); a = 0; break;
-            case 0b0011: car.turn(carSpeed, 0.4); a = 0; break;
+            case 0b0011: car.turn(carSpeed, 0.5); a = 0; break;
             case 0b0001: car.turn(carSpeed, 0.1); a = 0; break;
-            case 0b0111: { // TASK 1: turning left
+            case 0b0111: { // TASK 1: turning left, pattern 7
                 if (a==0){
+                    printf("Execute task 1. \n");
                     car.stop();
                     a++;
                     ThisThread::sleep_for(1s); 
                     break;
                 }
-                else if(a==1){
+                else{
+                    car.goStraight(30);
+                    ThisThread::sleep_for(1s);
                     car.turn(30, 0.1);
-                    ThisThread::sleep_for(1s); 
+                    ThisThread::sleep_for(2s); 
                     break;
                 }
             }
-            case 0b1111: { // FINISHED
+            case 0b1111: { //TASK 3: FINISHING THE LOOP 
                 car.stop();
+                //car_queue.call(&publish_message, &client);
+                a = 2;
                 break;
             }
+            case 0b0000: {// TASK 2:OBJECT DETECTION
+                if(a==0){
+                    printf("Object detected. \n");
+                    car.goStraight(carSpeed);
+                    ThisThread::sleep_for(1200ms);
+                    car.stop();
+                    ThisThread::sleep_for(1s);
+                    objectDetection = 0; a++;
+                    ThisThread::sleep_for(1s);
+                    measure_queue.call(obsMeasure);
+                    break;
+                }
+                else{
+                    car.goStraight(carSpeed);
+                    ThisThread::sleep_for(1s);
+                    break;
+                }
+            } 
+            default: car.goStraight(carSpeed - 10); break;
           }
       }
-}
-
-void messageArrived(MQTT::MessageData& md) {
-    MQTT::Message &message = md.message;
-    char msg[300];
-    sprintf(msg, "Message arrived: QoS%d, retained %d, dup %d, packetID %d\r\n", message.qos, message.retained, message.dup, message.id);
-    //printf(msg);
-    ThisThread::sleep_for(1s);
-    char payload[300];
-    sprintf(payload, "Payload %.*s\r\n", message.payloadlen, (char*)message.payload);
-    //printf(payload);
-    ++arrivedcount;
-}
-
-void publish_message(MQTT::Client<MQTTNetwork, Countdown> *client1) {
-  MQTT::Message message;
-  char buff[100];
-  sprintf(buff,"Distance travelled: %.2f (cm), Speed: %.2f(cm/s), Width: %.2f ", d, s, w[0]+ w[1]);
-  message.qos = MQTT::QOS0;
-  message.retained = false;
-  message.dup = false;
-  message.payload = (void *)buff;
-  message.payloadlen = strlen(buff) + 1;
-  int rc = client1->publish(topic, message);
-
-  printf("rc:  %d\r\n", rc);
-  printf("[Pubished]: %s\r\n", buff);
-}
-
-void close_mqtt() { 
-    closed = true; 
 }
 
 int main() {
@@ -234,8 +246,8 @@ int main() {
   MQTT::Client<MQTTNetwork, Countdown> client(mqttNetwork);
 
   // TODO: revise host to your IP
-  //const char *host = "192.168.137.1"; //pc
-  const char *host = "192.168.43.84"; // phone
+  const char *host = "192.168.137.1"; //pc
+  //const char *host = "192.168.43.84"; // phone
   const int port=1883;
   printf("Connecting to TCP network...\r\n");
   printf("address is %s/%d\r\n",host, port); // check setting
@@ -266,6 +278,7 @@ int main() {
   car_queue.call_every(10ms, &carDriving);
   car_queue.call_every(1s, &carStatus);
   car_queue.call_every(1s, &publish_message, &client);
+  //measure_queue.call_every(100ms, &objectDetection);
 
 // **********************
   while (1) {
