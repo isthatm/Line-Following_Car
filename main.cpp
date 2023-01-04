@@ -14,7 +14,6 @@ EventQueue car_queue;
 
 Thread measureThread;
 EventQueue measure_queue;
- MQTT::Client<MQTTNetwork, Countdown> *client();
 
 //Car
 PwmIn servo0_f(D12), servo1_f(D11); // servo0 - left ; servo1 - right
@@ -38,19 +37,19 @@ const char *topic = "Car";
 int pattern; double objD;
 int a; 
 int objectDetection = 1; // there is no object ahead by default
+int prepTask = 0;
 float inita0 = 0; float inita1 = 0;
 double d,s;
 float dis;
-
 
 const float PI = 3.13159;
 //const float R = 5.1; //distance between wheels -> radius of rotaion
 const float rotP = 32.04424507;
 float obj[2], w[2];
 int i = 0;
-int rotatingSpeed = 40; int carSpeed = 35;
+int rotatingSpeed = 45; int carSpeed = 32;
 
-int flag;
+int flag = 0;
 
 void carStatus(){
             //distance travelled
@@ -61,7 +60,6 @@ void carStatus(){
             inita0 = car.servo0.angle; //update current wheel angle for next call
             inita1 = car.servo1.angle;
             d = d + s;   
-            //printf("Distance: %.2f, Speed: %.2f, Width: %.2f \n", d, s, w[0] + w[1] );
 }
 
 void widthCalculation (double d, double currentWheelAngle, double initWheelAngle ){
@@ -90,7 +88,7 @@ void messageArrived(MQTT::MessageData& md) {
 void publish_message(MQTT::Client<MQTTNetwork, Countdown> *client1) {
   MQTT::Message message;
   char buff[100];
-  sprintf(buff,"Distance travelled: %.2f (cm), Speed: %.2f(cm/s), pattern: %d", d, s, pattern);
+  sprintf(buff,"Distance travelled: %.2f (cm), Speed: %.2f(cm/s), pattern: %d, ", d, s, pattern);
   //sprintf(buff,"Distance travelled: %.2f (cm), pattern: %d", d, pattern);
   message.qos = MQTT::QOS0;
   message.retained = false;
@@ -110,7 +108,7 @@ void close_mqtt() {
 void obsMeasure(){
     double d1, d2, obsMeasureAngle0;
     obsMeasureAngle0 = car.servo1.angle;
-   // car_queue.call(&publish_message, &client);
+    //car_queue.call(&publish_message, &client);
     while(1) {
         d1 = (float)ping1;
         if (d1 > 20){
@@ -162,27 +160,26 @@ void obsMeasure(){
            car.rotate(rotatingSpeed);
        }
    }
-   //if ( w[0] + w[1] > 15){
+   if ( w[0] + w[1] > 15){
        objectDetection = 1; // the gap length is wide enough, it's safe to go
-       printf("Finished object detection. \n");
-    //}
+       ThisThread::sleep_for(500ms);
+    }
 }
 
 void carDriving(){
     if(objectDetection){
       pattern = (int)qti1;
-          flag = 2;
+          flag = 1;
           switch (pattern) {
             case 0b1000: car.turn(carSpeed, -0.1); a = 0; break;
             case 0b1100: car.turn(carSpeed, -0.5); a = 0; break;
             case 0b0100: car.turn(carSpeed, -0.7); a = 0; break;
-            case 0b0110: car.goStraight(27); a = 0; break;
+            case 0b0110: car.goStraight(25); a = 0; break;
             case 0b0010: car.turn(carSpeed, 0.7); a = 0; break;
             case 0b0011: car.turn(carSpeed, 0.5); a = 0; break;
             case 0b0001: car.turn(carSpeed, 0.1); a = 0; break;
             case 0b0111: { // TASK 1: turning left, pattern 7
                 if (a==0){
-                    printf("Execute task 1. \n");
                     car.stop();
                     a++;
                     ThisThread::sleep_for(1s); 
@@ -196,30 +193,36 @@ void carDriving(){
                     break;
                 }
             }
+            case 0b1110: {
+                prepTask = 1;
+                break;
+            }
             case 0b1111: { //TASK 3: FINISHING THE LOOP 
                 car.stop();
-                //car_queue.call(&publish_message, &client);
                 a = 2;
                 break;
             }
+            
             case 0b0000: {// TASK 2:OBJECT DETECTION
-                if(a==0){
-                    printf("Object detected. \n");
+                if(a==0 && prepTask == 1){
+                    flag = 0;
                     car.goStraight(carSpeed);
-                    ThisThread::sleep_for(1200ms);
+                    ThisThread::sleep_for(1500ms);
                     car.stop();
                     ThisThread::sleep_for(1s);
                     objectDetection = 0; a++;
                     ThisThread::sleep_for(1s);
                     measure_queue.call(obsMeasure);
+                    prepTask = 0;
                     break;
                 }
                 else{
-                    car.goStraight(carSpeed);
-                    ThisThread::sleep_for(1s);
+                    car.stop();
+                    ThisThread::sleep_for(500ms);
                     break;
                 }
             } 
+            
             default: car.goStraight(carSpeed - 10); break;
           }
       }
@@ -246,8 +249,8 @@ int main() {
   MQTT::Client<MQTTNetwork, Countdown> client(mqttNetwork);
 
   // TODO: revise host to your IP
-  const char *host = "192.168.137.1"; //pc
-  //const char *host = "192.168.43.84"; // phone
+  //const char *host = "192.168.137.1"; //pc
+  const char *host = "192.168.43.84"; // phone
   const int port=1883;
   printf("Connecting to TCP network...\r\n");
   printf("address is %s/%d\r\n",host, port); // check setting
@@ -268,17 +271,17 @@ int main() {
   }
 
   if (client.subscribe(topic, MQTT::QOS0, messageArrived) != 0){
-            printf("Fail to subscribe\r\n");
+            printf("Failed to subscribe\r\n");
   }   
 
 // *********************
 
   carThread.start(callback(&car_queue, &EventQueue::dispatch_forever));
   measureThread.start(callback(&measure_queue, &EventQueue::dispatch_forever));
-  car_queue.call_every(10ms, &carDriving);
+  car_queue.call_every(20ms, &carDriving);
   car_queue.call_every(1s, &carStatus);
   car_queue.call_every(1s, &publish_message, &client);
-  //measure_queue.call_every(100ms, &objectDetection);
+
 
 // **********************
   while (1) {
@@ -302,7 +305,6 @@ int main() {
     return 0;
 
 }
-
 
 
 
