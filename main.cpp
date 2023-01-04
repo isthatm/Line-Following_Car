@@ -67,7 +67,6 @@ void widthCalculation (double d, double currentWheelAngle, double initWheelAngle
     wheelAngle =  abs(currentWheelAngle) - abs(initWheelAngle);
     p = 6.5*PI*( abs(rotAngle) / 360 );
     theta = (p / rotP)*360; //
-    //alpha1 = 90 - theta1;
     rotAngle = (theta*PI) / 180; // deg to rad
     w[i] = sin(rotAngle)*d;
     i++;
@@ -108,7 +107,6 @@ void close_mqtt() {
 void obsMeasure(){
     double d1, d2, obsMeasureAngle0;
     obsMeasureAngle0 = car.servo1.angle;
-    //car_queue.call(&publish_message, &client);
     while(1) {
         d1 = (float)ping1;
         if (d1 > 20){
@@ -303,7 +301,6 @@ int main() {
     printf("Successfully closed!\n");
 
     return 0;
-
 }
 
 
