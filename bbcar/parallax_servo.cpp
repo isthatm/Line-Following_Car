@@ -15,6 +15,7 @@ void parallax_servo::set_speed( double value ) {
     target_pwm_value = value * factor;
     // you can determine ramping factor formula by yourself
     ramping_factor = abs(target_pwm_value - current_pwm_value) / 50;
+    // ramping_factor: how much speed should be added/subtracted from the current speed
     if (target_pwm_value > 200) target_pwm_value = 200;
     else if (target_pwm_value < -200) target_pwm_value = -200;
 }
@@ -33,6 +34,8 @@ void parallax_servo::control(){
     else if (current_pwm_value < target_pwm_value) {
         if (current_pwm_value > target_pwm_value - ramping_factor)
             current_pwm_value = target_pwm_value;
+        // target_pwm_value is meant to be (current_pwm_value + ramping_factor) if it is smaller than the target
+        // if it is larger than (current_pwm_value + ramping_factor), set it to the target speed
         else current_pwm_value += ramping_factor;
     }
     pwmOut->write((CENTER_BASE + current_pwm_value) / 20000);
