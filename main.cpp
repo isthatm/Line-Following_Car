@@ -246,7 +246,7 @@ int main() {
   MQTTNetwork mqttNetwork(net);
   MQTT::Client<MQTTNetwork, Countdown> client(mqttNetwork);
 
-  // TODO: revise host to your IP
+  // TODO: revise IP
   //const char *host = "192.168.137.1"; //pc
   const char *host = "192.168.43.84"; // phone
   const int port=1883;
@@ -255,7 +255,7 @@ int main() {
 
   int rc = mqttNetwork.connect(host, port); //(host, 1883);
   if (rc != 0) {
-    printf("Connection error.");// -3011: restart mqtt mosquitto broker
+    printf("Connection error.");// -3011 -> solution: restart mqtt mosquitto broker
     return -1;
   }
   printf("Successfully connected!\r\n");
