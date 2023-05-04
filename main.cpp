@@ -274,12 +274,12 @@ int main() {
 
 // *********************
 
+// Car navigation 
   carThread.start(callback(&car_queue, &EventQueue::dispatch_forever));
   measureThread.start(callback(&measure_queue, &EventQueue::dispatch_forever));
   car_queue.call_every(20ms, &carDriving);
   car_queue.call_every(1s, &carStatus);
   car_queue.call_every(1s, &publish_message, &client);
-
 
 // **********************
   while (1) {
