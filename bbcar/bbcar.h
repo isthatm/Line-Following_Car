@@ -15,7 +15,7 @@ class BBCar{
 		void controlWheel();
 		void stop();
 		void goStraight( double speed );
-        void rotate(double speed);
+        	void rotate(double speed);
 
 		// turn left/right with a factor of speed
 		void turn( double speed, double factor );
@@ -24,13 +24,12 @@ class BBCar{
 		float clamp( float value, float max, float min );
 		int turn2speed( float turn );
         
-        //feedbackservo
-        void feedbackWheel();
-        void goCertainDistance(float distance);
-        void rotateCertainDistance(float distance);
+        	//feedbackservo
+        	void feedbackWheel();
+        	void goCertainDistance(float distance);
+        	void rotateCertainDistance(float distance);
 		int checkDistance(float errorDistance_Range);
 		int checkRotateDistance(float errorDistance_Range);
-
 };
 
 #endif
