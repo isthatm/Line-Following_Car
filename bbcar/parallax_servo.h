@@ -22,8 +22,6 @@ class parallax_servo {
         //feedback servo function
         void feedback360();                         // Position monitoring
 
-    // private:
-
         PwmOut *pwmOut; // pwm output pin pointer
         PwmIn  *pwmIn;  //servo feedback signal
 
