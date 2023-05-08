@@ -30,7 +30,7 @@ class parallax_servo {
         double factor;	// determine turning rate, 0 means this wheel don't move
         double target_pwm_value; // desire steady state pwm output value
         double current_pwm_value;  // current pwm output value
-	    double ramping_factor; // car pwm value change speed each iteration
+	double ramping_factor; // car pwm value change speed each iteration
 
         //feedback 360 servo 
         volatile int angle, targetAngle=0;              // Global shared variables
