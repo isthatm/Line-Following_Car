@@ -20,7 +20,10 @@
  *    Ian Craggs - fix for bug 475749 - packetid modified twice
  *    Ian Craggs - add ability to set message handler separately #6
  *******************************************************************************/
-
+/*****
+Abbreviations:
+QoS - Quality of Service: three levels from 0-2
+*****/
 #if !defined(MQTTCLIENT_H)
 #define MQTTCLIENT_H
 
