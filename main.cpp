@@ -85,7 +85,7 @@ void messageArrived(MQTT::MessageData& md) {
 }
 
 void publish_message(MQTT::Client<MQTTNetwork, Countdown> *client1) {
-  MQTT::Message message;
+  MQTT::Message message; //MQTT = namespace
   char buff[100];
   sprintf(buff,"Distance travelled: %.2f (cm), Speed: %.2f(cm/s), pattern: %d, ", d, s, pattern);
   //sprintf(buff,"Distance travelled: %.2f (cm), pattern: %d", d, pattern);
@@ -260,7 +260,7 @@ int main() {
   }
   printf("Successfully connected!\r\n");
 
-  MQTTPacket_connectData data = MQTTPacket_connectData_initializer;
+  MQTTPacket_connectData data = MQTTPacket_connectData_initializer; 
   data.MQTTVersion = 3;
   data.clientID.cstring = "Mbed"; 
 
